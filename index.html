@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家族树拖拖看</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Noto+Sans+SC:wght@500;700&display=swap">
+<style>
+/* Layout: smartboard, landscape. A real family tree: grandparents on top, dad's and mom's generation in the middle, me and siblings at the bottom, joined by tree lines. Card tray underneath. Single bright light look by choice. */
+:root {
+  --bg: #F6F6F2;
+  --ink: #2B2B2B;
+  --muted: #5E625E;
+  --card: #FFFFFF;
+  --line: #CFD2CC;
+  --branch: #8A8F88;
+  --dad: #F2A65A;
+  --dad-ink: #B4471C;
+  --dad-soft: #FFF6E5;
+  --mom: #EC8FB3;
+  --mom-ink: #B23D6E;
+  --mom-soft: #FDEEF3;
+  --me: #8CC7A0;
+  --me-ink: #2F7A4D;
+  --me-soft: #EEF7F1;
+  --bad: #C2372F;
+  --f-zh: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --f-latin: 'Andika', 'Trebuchet MS', system-ui, sans-serif;
+  color-scheme: light;
+}
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-latin);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px;
+  box-sizing: border-box;
+  user-select: none; -webkit-user-select: none;
+}
+.app { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.title { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.ruby { display: inline-flex; gap: 2px; align-items: flex-end; }
+.ruby > span { display: flex; flex-direction: column; align-items: center; }
+.ruby .py { font-family: var(--f-latin); line-height: 1.1; white-space: nowrap; }
+.ruby .zh { font-family: var(--f-zh); font-weight: 700; line-height: 1.1; }
+.title .py { font-size: 18px; } .title .zh { font-size: 40px; }
+.title .en { font-size: 20px; font-weight: 700; color: var(--muted); padding-bottom: 6px; }
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.score { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 8px 14px; border-radius: 999px; background: var(--card); border: 2px solid var(--line); }
+button {
+  font: 700 18px var(--f-latin); color: var(--ink); background: var(--card);
+  border: 2px solid var(--ink); border-radius: 12px; padding: 10px 16px; cursor: pointer;
+}
+button[aria-pressed="false"] { color: var(--muted); border-color: var(--line); }
+button:focus-visible { outline: 3px solid var(--dad-ink); outline-offset: 2px; }
+
+.treebox { position: relative; width: 100%; }
+.treebox svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.treebox svg path { fill: none; stroke: var(--branch); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.treebox svg path.couple { stroke-width: 4; }
+.side-label { position: absolute; top: 0; display: flex; align-items: flex-end; gap: 8px; font-size: 17px; font-weight: 700; }
+.side-label .py { font-size: 13px; } .side-label .zh { font-size: 22px; }
+.side-label .ruby > span { width: 32px; }
+.side-label.dad { left: 0; color: var(--dad-ink); }
+.side-label.mom { right: 0; color: var(--mom-ink); }
+
+.slot {
+  position: absolute; box-sizing: border-box; border-radius: 14px;
+  border: 3px dashed var(--line); background: var(--card);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px;
+  transition: background .15s;
+}
+.slot.g-dad { border-color: var(--dad); background: var(--dad-soft); }
+.slot.g-mom { border-color: var(--mom); background: var(--mom-soft); }
+.slot.g-me { border-color: var(--me); background: var(--me-soft); }
+.slot .hint { font-size: 15px; line-height: 1.15; color: var(--muted); text-align: center; }
+.slot.hover { background: var(--card); border-style: solid; }
+.slot.done, .slot.me { border-style: solid; background: var(--card); }
+.hints-off .slot:not(.done):not(.me) .hint { visibility: hidden; }
+
+.tray {
+  background: var(--card); border: 2px solid var(--line); border-radius: 18px; padding: 12px;
+  display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; min-height: 92px;
+}
+.card {
+  width: 112px; min-height: 84px; box-sizing: border-box; border-radius: 12px; background: var(--card);
+  border: 3px solid var(--ink); box-shadow: 0 3px 0 var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px;
+  cursor: grab; touch-action: none;
+}
+.card .py, .slot.me .py { font-size: 17px; } .card .zh, .slot.me .zh { font-size: 32px; }
+.card.dragging { position: fixed; z-index: 50; cursor: grabbing; box-shadow: 0 10px 24px rgba(43,43,43,.25); transform: scale(1.06); pointer-events: none; }
+.card.placed { box-shadow: none; cursor: default; background: transparent; width: auto; min-height: 0; padding: 0; border: 0; }
+.card.shake { animation: shake .35s; border-color: var(--bad); }
+@keyframes shake { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-8px) } 75% { transform: translateX(8px) } }
+.win {
+  text-align: center; font-size: 22px; font-weight: 700; color: var(--me-ink);
+  background: var(--me-soft); border: 2px solid var(--me); border-radius: 14px; padding: 10px;
+}
+.win .zh { font-size: 32px; }
+@media (prefers-reduced-motion: reduce) { .card.shake { animation: none; } .slot { transition: none; } }
+@media (max-width: 760px) { .card { width: 92px; } .card .zh { font-size: 26px; } .card .py { font-size: 14px; } }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <header>
+    <div class="title">
+      <span class="ruby" id="titleRuby"></span>
+      <span class="en">Family Tree</span>
+    </div>
+    <div class="controls">
+      <span class="score" id="score">0 / 15</span>
+      <button id="hintBtn" type="button" aria-pressed="true">English hints</button>
+      <button id="resetBtn" type="button">Start over</button>
+    </div>
+  </header>
+
+  <div class="treebox" id="treebox">
+    <svg id="branches" aria-hidden="true"></svg>
+    <div class="side-label dad"><span class="ruby" data-ruby="爸爸这边|bà ba zhè biān"></span><span>Dad's side</span></div>
+    <div class="side-label mom"><span class="ruby" data-ruby="妈妈这边|mā ma zhè biān"></span><span>Mom's side</span></div>
+  </div>
+
+  <div class="win" id="win" hidden><span class="ruby" data-ruby="太棒了|tài bàng le"></span> Great job!</div>
+
+  <div class="tray" id="tray" aria-label="Word cards"></div>
+</div>
+
+<script>
+const WORDS = {
+  '爷爷': ['yé ye', "dad's dad"], '奶奶': ['nǎi nai', "dad's mom"],
+  '伯伯': ['bó bo', "dad's older brother"], '叔叔': ['shū shu', "dad's younger brother"],
+  '姑姑': ['gū gu', "dad's sister"], '爸爸': ['bà ba', 'dad'],
+  '外公': ['wài gōng', "mom's dad"], '外婆': ['wài pó', "mom's mom"],
+  '妈妈': ['mā ma', 'mom'], '舅舅': ['jiù jiu', "mom's brother"], '阿姨': ['ā yí', "mom's sister"],
+  '哥哥': ['gē ge', 'older brother'], '姐姐': ['jiě jie', 'older sister'],
+  '我': ['wǒ', 'me'], '弟弟': ['dì di', 'younger brother'], '妹妹': ['mèi mei', 'younger sister']
+};
+// tree shape: each family = a couple on top and their children underneath
+const GROUP = {
+  '爷爷': 'dad', '奶奶': 'dad', '伯伯': 'dad', '叔叔': 'dad', '姑姑': 'dad', '爸爸': 'dad',
+  '外公': 'mom', '外婆': 'mom', '妈妈': 'mom', '舅舅': 'mom', '阿姨': 'mom',
+  '哥哥': 'me', '姐姐': 'me', '我': 'me', '弟弟': 'me', '妹妹': 'me'
+};
+const MIDDLE = ['伯伯', '叔叔', '姑姑', '爸爸', '妈妈', '舅舅', '阿姨'];
+const KIDS = ['哥哥', '姐姐', '我', '弟弟', '妹妹'];
+const FAMILIES = [
+  { parents: ['爷爷', '奶奶'], kids: ['伯伯', '叔叔', '姑姑', '爸爸'] },
+  { parents: ['外公', '外婆'], kids: ['妈妈', '舅舅', '阿姨'] },
+  { parents: ['爸爸', '妈妈'], kids: KIDS }
+];
+const CARDS = Object.keys(WORDS).filter(w => w !== '我');
+
+function rubyHTML(zh, py) {
+  const p = py.split(' ');
+  return Array.from(zh).map((c, i) => `<span><span class="py">${p[i] || ''}</span><span class="zh">${c}</span></span>`).join('');
+}
+document.getElementById('titleRuby').innerHTML = rubyHTML('家族树', 'jiā zú shù');
+document.querySelectorAll('[data-ruby]').forEach(el => { const [z, p] = el.dataset.ruby.split('|'); el.innerHTML = rubyHTML(z, p); });
+
+const treebox = document.getElementById('treebox');
+const svg = document.getElementById('branches');
+const slots = {};
+Object.keys(WORDS).forEach(w => {
+  const s = document.createElement('div');
+  s.className = 'slot g-' + GROUP[w];
+  s.dataset.answer = w;
+  treebox.appendChild(s);
+  slots[w] = s;
+});
+
+// place slots and draw branches from the box width
+function layout() {
+  const W = treebox.clientWidth;
+  const gap = Math.max(10, Math.min(22, W * 0.015));
+  const w = Math.min(140, (W - gap * 6) / 7);
+  const h = Math.max(88, Math.min(104, w * 0.78));
+  const vgap = 58, top = 44;
+  const y1 = top, y2 = y1 + h + vgap, y3 = y2 + h + vgap;
+  const pos = {};
+  const rowW = 7 * w + 6 * gap, x0 = (W - rowW) / 2;
+  MIDDLE.forEach((k, i) => pos[k] = { x: x0 + i * (w + gap), y: y2 });
+  const center = (ks) => (pos[ks[0]].x + pos[ks[ks.length - 1]].x + w) / 2;
+  const pairAt = (a, b, cx, y) => { pos[a] = { x: cx - gap / 2 - w, y }; pos[b] = { x: cx + gap / 2, y }; };
+  pairAt('爷爷', '奶奶', center(FAMILIES[0].kids), y1);
+  pairAt('外公', '外婆', center(FAMILIES[1].kids), y1);
+  const kcx = (pos['爸爸'].x + w + pos['妈妈'].x) / 2;
+  const kW = 5 * w + 4 * gap;
+  KIDS.forEach((k, i) => pos[k] = { x: kcx - kW / 2 + i * (w + gap), y: y3 });
+  Object.entries(pos).forEach(([k, p]) => Object.assign(slots[k].style, { left: p.x + 'px', top: p.y + 'px', width: w + 'px', height: h + 'px' }));
+  treebox.style.height = (y3 + h + 4) + 'px';
+
+  let d = '', dc = '';
+  FAMILIES.forEach(f => {
+    const [a, b] = f.parents;
+    const ya = pos[a].y + h / 2;
+    const xa = pos[a].x + w, xb = pos[b].x;
+    dc += `M${xa} ${ya} L${xb} ${ya} `;           // couple line
+    const mx = (xa + xb) / 2;
+    const busY = pos[f.kids[0]].y - vgap / 2;
+    const tops = f.kids.map(k => pos[k].x + w / 2);
+    d += `M${mx} ${ya} L${mx} ${busY} `;           // drop from the couple
+    d += `M${Math.min(mx, ...tops)} ${busY} L${Math.max(mx, ...tops)} ${busY} `; // bar
+    tops.forEach(x => d += `M${x} ${busY} L${x} ${pos[f.kids[0]].y} `);       // to each child
+  });
+  svg.innerHTML = `<path d="${d}"></path><path class="couple" d="${dc}"></path>`;
+}
+
+const tray = document.getElementById('tray');
+const scoreEl = document.getElementById('score');
+const winEl = document.getElementById('win');
+let placed = 0;
+
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function hintEl(w) { const e = document.createElement('span'); e.className = 'hint'; e.textContent = WORDS[w][1]; return e; }
+
+function makeCard(w) {
+  const c = document.createElement('div');
+  c.className = 'card';
+  c.dataset.word = w;
+  c.innerHTML = `<span class="ruby">${rubyHTML(w, WORDS[w][0])}</span>`;
+  c.addEventListener('pointerdown', startDrag);
+  return c;
+}
+
+function setup() {
+  placed = 0;
+  winEl.hidden = true;
+  tray.innerHTML = '';
+  Object.entries(slots).forEach(([w, s]) => {
+    s.classList.remove('done', 'hover');
+    s.innerHTML = '';
+    if (w === '我') {
+      s.classList.add('me');
+      s.insertAdjacentHTML('beforeend', `<span class="ruby">${rubyHTML('我', 'wǒ')}</span>`);
+    }
+    s.appendChild(hintEl(w));
+  });
+  shuffle(CARDS.slice()).forEach(w => tray.appendChild(makeCard(w)));
+  updateScore();
+}
+
+function updateScore() {
+  scoreEl.textContent = `${placed} / ${CARDS.length}`;
+  if (placed === CARDS.length) winEl.hidden = false;
+}
+
+let drag = null;
+function startDrag(e) {
+  const card = e.currentTarget;
+  if (card.classList.contains('placed') || drag) return;
+  e.preventDefault();
+  const r = card.getBoundingClientRect();
+  const ph = document.createElement('div');
+  ph.style.width = r.width + 'px'; ph.style.height = r.height + 'px';
+  card.after(ph);
+  drag = { card, ph, dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId, over: null };
+  card.classList.add('dragging');
+  card.style.width = r.width + 'px';
+  moveTo(e.clientX, e.clientY);
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+function moveTo(x, y) {
+  drag.card.style.left = (x - drag.dx) + 'px';
+  drag.card.style.top = (y - drag.dy) + 'px';
+}
+function slotAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const s = el && el.closest('.slot');
+  return s && !s.classList.contains('done') && !s.classList.contains('me') ? s : null;
+}
+function onMove(e) {
+  if (!drag || e.pointerId !== drag.id) return;
+  moveTo(e.clientX, e.clientY);
+  const s = slotAt(e.clientX, e.clientY);
+  if (s !== drag.over) { if (drag.over) drag.over.classList.remove('hover'); if (s) s.classList.add('hover'); drag.over = s; }
+}
+function onUp(e) {
+  if (!drag || e.pointerId !== drag.id) return;
+  window.removeEventListener('pointermove', onMove);
+  window.removeEventListener('pointerup', onUp);
+  window.removeEventListener('pointercancel', onUp);
+  const { card, ph } = drag;
+  const s = slotAt(e.clientX, e.clientY);
+  if (drag.over) drag.over.classList.remove('hover');
+  card.classList.remove('dragging');
+  card.style.left = card.style.top = card.style.width = '';
+  ph.remove();
+  if (s && s.dataset.answer === card.dataset.word) {
+    card.classList.add('placed');
+    s.classList.add('done');
+    s.innerHTML = '';
+    s.appendChild(card);
+    s.appendChild(hintEl(card.dataset.word));
+    placed++;
+    updateScore();
+  } else if (s) {
+    card.classList.add('shake');
+    setTimeout(() => card.classList.remove('shake'), 400);
+  }
+  drag = null;
+}
+
+const hintBtn = document.getElementById('hintBtn');
+hintBtn.addEventListener('click', () => {
+  const on = hintBtn.getAttribute('aria-pressed') !== 'true';
+  hintBtn.setAttribute('aria-pressed', String(on));
+  document.getElementById('app').classList.toggle('hints-off', !on);
+});
+document.getElementById('resetBtn').addEventListener('click', setup);
+window.addEventListener('resize', layout);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+setup();
+layout();
+</script>
+</body>
+</html>
